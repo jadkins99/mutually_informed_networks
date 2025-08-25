@@ -50,7 +50,6 @@ jobs:
           # Derive SRC_DIR from UNIT_DIR if it contains /src/
           SRC_DIR=""
           if [[ -n "${UNIT_DIR}" && "${UNIT_DIR}" == *"/src/"* ]]; then
-            # Keep everything up to and including /src
             prefix="${UNIT_DIR%%/src/*}"
             SRC_DIR="${prefix}/src"
           fi
@@ -64,4 +63,185 @@ jobs:
           echo "src_dir=${SRC_DIR}" >> "$GITHUB_OUTPUT"
 
           # Presence checks
-          if [ -n "${UNIT_DIR}" ] && find "${UNIT_DIR}" -type f -name '*.py' -print -quit*]()
+          if [ -n "${UNIT_DIR}" ] && find "${UNIT_DIR}" -type f -name '*.py' -print -quit | grep -q .; then
+            echo "has_unit=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "${INTEG_DIR}" ] && find "${INTEG_DIR}" -type f -name '*.py' -print -quit | grep -q .; then
+            echo "has_integration=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f ".pre-commit-config.yaml" ]; then
+            echo "has_precommit=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Packaging present at repo root?
+          if [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+            echo "pkg_at_root=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pkg_at_root=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Debug
+          {
+            echo "== Detect Debug =="
+            echo "UNIT_DIR: ${UNIT_DIR:-<none>}"
+            echo "INTEG_DIR: ${INTEG_DIR:-<none>}"
+            echo "SRC_DIR: ${SRC_DIR:-<none>}"
+            echo "pkg_at_root=$(grep pkg_at_root $GITHUB_OUTPUT | tail -1 | cut -d= -f2)"
+            echo "has_unit=$(grep has_unit $GITHUB_OUTPUT | tail -1 | cut -d= -f2)"
+            echo "has_integration=$(grep has_integration $GITHUB_OUTPUT | tail -1 | cut -d= -f2)"
+            echo "has_precommit=$(grep has_precommit $GITHUB_OUTPUT | tail -1 | cut -d= -f2)"
+          } | sed 's/^/detect: /'
+
+  # -------- Unit tests (no DB) --------
+  tests:
+    name: Tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: detect
+    if: ${{ needs.detect.outputs.has_unit == 'true' }}
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    env:
+      PYTHONPATH: ${{ needs.detect.outputs.src_dir }}:${{ env.PYTHONPATH }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install project & test deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          if [ "${{ needs.detect.outputs.pkg_at_root }}" = "true" ]; then
+            pip install -e .
+            pip install -e ".[dev]" || true
+            pip install -e ".[test]" || true
+          fi
+          pip install pytest pytest-cov
+
+      - name: Run tests
+        run: |
+          pytest -q --maxfail=1 --disable-warnings \
+            "${{ needs.detect.outputs.unit_dir }}" \
+            --cov="${{ needs.detect.outputs.src_dir || '.' }}" \
+            --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: warn
+
+  # -------- Integration tests (with Postgres) --------
+  tests-with-db:
+    name: Integration Tests w/ Postgres (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: detect
+    if: ${{ needs.detect.outputs.has_integration == 'true' }}
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    env:
+      PYTHONPATH: ${{ needs.detect.outputs.src_dir }}:${{ env.PYTHONPATH }}
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/testdb
+
+    services:
+      postgres:
+        image: postgres:16
+        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd="pg_isready -U ci -d testdb"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install project & test deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          if [ "${{ needs.detect.outputs.pkg_at_root }}" = "true" ]; then
+            pip install -e .
+            pip install -e ".[dev]" || true
+            pip install -e ".[test]" || true
+          fi
+          pip install pytest pytest-cov psycopg2-binary
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h 127.0.0.1 -p 5432 -U ci -d testdb; then
+              echo "Postgres is ready"; break
+            fi
+            echo "Waiting for Postgres... ($i)"; sleep 2
+          done
+
+      - name: Run integration tests
+        run: |
+          pytest -q --maxfail=1 --disable-warnings \
+            "${{ needs.detect.outputs.integ_dir }}" \
+            --cov="${{ needs.detect.outputs.src_dir || '.' }}" \
+            --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: warn
+
+  # -------- Lint (only if .pre-commit-config.yaml exists) --------
+  lint:
+    name: Lint (pre-commit)
+    runs-on: ubuntu-latest
+    needs: detect
+    if: ${{ needs.detect.outputs.has_precommit == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install pre-commit and hook deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+          pre-commit install-hooks
+      - name: Run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure --color always
