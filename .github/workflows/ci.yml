@@ -11,7 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- Detect what should run (unit tests, integration tests, lint) ---
   detect:
     name: Detect test/lint targets
     runs-on: ubuntu-latest
@@ -21,22 +20,31 @@ jobs:
       has_precommit: ${{ steps.probe.outputs.has_precommit }}
     steps:
       - uses: actions/checkout@v4
+
       - id: probe
         shell: bash
         run: |
           set -euo pipefail
 
-          # Paths in your repo
           UNIT_DIR="mutually_informed_networks/src/lib_mutual_information/tests"
           INTEG_DIR="$UNIT_DIR/integration"
 
-          if compgen -G "$UNIT_DIR/**/*.py" > /dev/null || compgen -G "$UNIT_DIR/*.py" > /dev/null; then
+          # default values
+          echo "has_unit=false" >> "$GITHUB_OUTPUT"
+          echo "has_integration=false" >> "$GITHUB_OUTPUT"
+          echo "has_precommit=false" >> "$GITHUB_OUTPUT"
+
+          # unit tests: any *.py under UNIT_DIR
+          if [ -d "$UNIT_DIR" ] && find "$UNIT_DIR" -type f -name '*.py' -print -quit | grep -q .; then
             echo "has_unit=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_unit=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if compgen -G "$INTEG_DIR/**/*.py" > /dev/null || compgen -G "$INTEG_DIR/*.py" > /dev/null; then
+          # integration tests: any *.py under INTEG_DIR
+          if [ -d "$INTEG_DIR" ] && find "$INTEG_DIR" -type f -name '*.py' -print -quit | grep -q .; then
             echo "has_integration=true" >> "$GITHUB_OUTPUT"
-          else
-            ec
+          fi
+
+          # pre-commit config present?
+          if [ -f ".pre-commit-config.yaml" ]; then
+            echo "has_precommit=true" >> "$GITHUB_OUTPUT"
+          fi
