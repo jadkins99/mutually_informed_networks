@@ -8,6 +8,10 @@ def prob_of_binned_vector(x: jnp.ndarray) -> jnp.ndarray:
     :param x: A 2D array where each row is a binned vector.
     :return: A 1D array of probabilities corresponding to each unique binned vector.
     """
+    assert x.shape[-1] > 0, "Input array must have at least one column."
+    assert jnp.all(jnp.array(x.shape) > 0), "Input array must not be empty."
+    assert len(x.shape) >= 2, "Input array must be 2D."
+
     unique_vectors, counts = jnp.unique(x, axis=0, return_counts=True)
     probabilities = counts / jnp.sum(counts)
     return probabilities
@@ -23,7 +27,8 @@ def mutual_information_from_binned_vectors(x: jnp.ndarray, y: jnp.ndarray) -> jn
     :param y: 2D array where each row is a binned vector.
     :return: Approximate mutual information between `x` and `y`.
     """
-    assert x.shape[-1] == y.shape[-1], "x and y must have the same number of columns (features)."
+    assert (jnp.array(x.shape)[:-1] == jnp.array(y.shape)[:-1]).all(), \
+        "x and y must have the same number of rows (samples)."
 
     # Compute unique vectors and their probabilities
     px = prob_of_binned_vector(x)
