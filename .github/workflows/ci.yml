@@ -3,15 +3,14 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   tests:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -19,12 +18,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements.txt pytest
 
-      - name: Run unit tests
+      # Make your module importable as a top-level name
+      - name: Add module directory to PYTHONPATH
+        run: echo "PYTHONPATH=$PWD/mutually_informed_networks/src/lib_mutual_information:$PYTHONPATH" >> $GITHUB_ENV
+
+      - name: Run tests
         run: |
-          pytest mutually_informed_networks/src/lib_mutual_information/tests
+          pytest mutually_informed_networks/src/lib_mutual_information/tests -q
