@@ -11,9 +11,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # -------- Unit tests (no DB) --------
   tests:
     name: Tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    if: ${{ hashFiles('mutually_informed_networks/src/lib_mutual_information/tests/**', '!mutually_informed_networks/src/lib_mutual_information/tests/integration/**') != '' }}
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install project & test deps
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f pyproject.toml ]; then
+            python - <<'PY'
+            import sys, subprocess, pathlib
+            try:
+                import tomllib  # 3.11+
+            except ModuleNotFoundError:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
+                import tomli as tomllib
+            data = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+            extras = set(data.get("project", {}).get("optional-dependencies", {}).keys())
+            if {"dev","test"} <= extras:
+                subprocess.check_call([sys.executable,"-m","pip","install","-e",".[dev,test]"])
+            elif "dev" in extras:
+                subprocess.check_call([sys.executable,"-m","pip","install","-e",".[dev]"])
+            elif "test" in extras:
+                subprocess.check_call([sys.executable,"-m","pip","install","-e",".[test]"])
+            else:
+                subprocess.check_call([sys.executable,"-m","pip","install","-e","."])
+            PY
+          else
+            if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+            if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+            pip install -e .
+          fi
+          pip install pytest pytest-cov
+
+      - name: Run tests
+        run: |
+          pytest -q --maxfail=1 --disable-warnings \
+            mutually_informed_networks/src/lib_mutual_information/tests \
+            --cov=. --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: warn
+
+  # -------- Integration tests (with Postgres) --------
+  tests-with-db:
+    name: Integration Tests w/ Postgres (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('mutually_informed_networks/src/lib_mutual_information/tests/integration/**') != '' }}
 
     permissions:
       contents: read
@@ -39,7 +108,6 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/testdb
-      PYTHONWARNINGS: default
 
     steps:
       - name: Checkout
@@ -52,23 +120,18 @@ jobs:
           cache: pip
 
       - name: Install project & test deps
-        shell: bash
         run: |
           python -m pip install --upgrade pip
           if [ -f pyproject.toml ]; then
             python - <<'PY'
             import sys, subprocess, pathlib
             try:
-                import tomllib  # Python 3.11+
+                import tomllib
             except ModuleNotFoundError:
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
                 import tomli as tomllib
-
-            p = pathlib.Path("pyproject.toml")
-            data = tomllib.loads(p.read_text(encoding="utf-8"))
-            proj = data.get("project", {})
-            extras = set(proj.get("optional-dependencies", {}).keys())
-
+            data = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+            extras = set(data.get("project", {}).get("optional-dependencies", {}).keys())
             if {"dev","test"} <= extras:
                 subprocess.check_call([sys.executable,"-m","pip","install","-e",".[dev,test]"])
             elif "dev" in extras:
@@ -83,7 +146,7 @@ jobs:
             if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
             pip install -e .
           fi
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov psycopg2-binary
 
       - name: Wait for Postgres
         run: |
@@ -94,29 +157,34 @@ jobs:
             echo "Waiting for Postgres... ($i)"; sleep 2
           done
 
-      - name: Run tests
-        run: pytest
+      - name: Run integration tests
+        run: |
+          pytest -q --maxfail=1 --disable-warnings \
+            mutually_informed_networks/src/lib_mutual_information/tests/integration \
+            --cov=. --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.python-version }}
+          name: coverage-integration-${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: warn
 
+  # -------- Lint (only if config exists) --------
   lint:
     name: Lint (pre-commit)
     runs-on: ubuntu-latest
+    if: ${{ hashFiles('.pre-commit-config.yaml') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install pre-commit and linters
+      - name: Install pre-commit and hook deps
         run: |
           python -m pip install --upgrade pip
           pip install pre-commit
           pre-commit install-hooks
       - name: Run pre-commit
-        run: pre-commit run --all-files
+        run: pre-commit run --all-files --show-diff-on-failure --color always
