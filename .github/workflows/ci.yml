@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # --- Detect what should run (unit tests, integration tests, lint) ---
   detect:
     name: Detect test/lint targets
     runs-on: ubuntu-latest
@@ -102,34 +103,24 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install project & test deps
+      - name: Install project & test deps (no heredoc)
         shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           if [ -f pyproject.toml ]; then
-            python - <<'PY'
-            import sys, subprocess, pathlib
-            try:
-                import tomllib  # 3.11+
-            except ModuleNotFoundError:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
-                import tomli as tomllib
-            data = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
-            extras = set(data.get("project", {}).get("optional-dependencies", {}).keys())
-            if {"dev","test"} <= extras:
-                subprocess.check_call([sys.executable,"-m","pip","install","-e",".[dev,test]"])
-            elif "dev" in extras:
-                subprocess.check_call([sys.executable,"-m","pip","install","-e",".[dev]"])
-            elif "test" in extras:
-                subprocess.check_call([sys.executable,"-m","pip","install","-e",".[test]"])
-            else:
-                subprocess.check_call([sys.executable,"-m","pip","install","-e","."])
-            PY
+            # Install base package
+            pip install -e .
+            # Try optional extras if defined; ignore if they don't exist
+            pip install -e ".[dev]" || true
+            pip install -e ".[test]" || true
           else
+            # Fallback for legacy requirements files
             if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
             if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
             pip install -e .
           fi
+          # Make sure pytest & coverage are present
           pip install pytest pytest-cov
 
       - name: Run tests
@@ -187,16 +178,61 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install project & test deps
+      - name: Install project & test deps (no heredoc)
         shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           if [ -f pyproject.toml ]; then
-            python - <<'PY'
-            import sys, subprocess, pathlib
-            try:
-                import tomllib
-            except ModuleNotFoundError:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
-                import tomli as tomllib
-            data = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
+            pip install -e .
+            pip install -e ".[dev]" || true
+            pip install -e ".[test]" || true
+          else
+            if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+            if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+            pip install -e .
+          fi
+          pip install pytest pytest-cov psycopg2-binary
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h 127.0.0.1 -p 5432 -U ci -d testdb; then
+              echo "Postgres is ready"; break
+            fi
+            echo "Waiting for Postgres... ($i)"; sleep 2
+          done
+
+      - name: Run integration tests
+        run: |
+          pytest -q --maxfail=1 --disable-warnings \
+            "${{ needs.detect.outputs.integ_dir }}" \
+            --cov=. --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: warn
+
+  # -------- Lint (only if .pre-commit-config.yaml exists) --------
+  lint:
+    name: Lint (pre-commit)
+    runs-on: ubuntu-latest
+    needs: detect
+    if: ${{ needs.detect.outputs.has_precommit == 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install pre-commit and hook deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+          pre-commit install-hooks
+      - name: Run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure --color always
