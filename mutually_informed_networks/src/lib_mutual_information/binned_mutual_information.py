@@ -27,6 +27,12 @@ def mutual_information_from_binned_vectors(x: jnp.ndarray, y: jnp.ndarray) -> jn
     :param y: 2D array where each row is a binned vector.
     :return: Approximate mutual information between `x` and `y`.
     """
+    assert x.shape[-1] > 0, "Input array must have at least one column."
+    assert y.shape[-1] > 0, "Target array must have at least one column."
+    assert jnp.all(jnp.array(x.shape) > 0), "Input array must not be empty."
+    assert jnp.all(jnp.array(y.shape) > 0), "Target array must not be empty."
+    assert len(x.shape) >= 2, "Input array must be 2D."
+    assert len(y.shape) >= 2, "Target array must be 2D."
     assert (jnp.array(x.shape)[:-1] == jnp.array(y.shape)[:-1]).all(), \
         "x and y must have the same number of rows (samples)."
 
