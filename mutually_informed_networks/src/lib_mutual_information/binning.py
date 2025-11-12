@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 
-def bin_into_uniform_bins(data: jnp.ndarray, num_bins: int, min_value: float = -100.0, max_value: float = 100.0):
+def bin_into_uniform_bins(data: jnp.ndarray, num_bins: int, min_value: float = 0.0, max_value: float = 10.0):
     """
     Bin the input data into uniform bins.
     :param data: Input data to be binned.

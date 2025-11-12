@@ -1,17 +1,17 @@
 import jax
 import jax.numpy as jnp
 
-from binned_mutual_information import mutual_information_from_binned_vectors
-from binning import bin_into_uniform_bins
+from binned_mutual_information import uniformly_bin_and_compute_mi
 
 
-def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray, num_bins: int = 30) -> tuple[list[float], list[float]]:
+def compute_layer_wise_mi_with_uniform_binning(model, x: jnp.ndarray, y: jnp.ndarray, num_bins: int = 30) -> tuple[list[float], list[float]]:
     """
     Compute the layer-wise mutual information between the inputs and each layer's activations,
     as well as between each layer's activations and the outputs.
     :param model: The neural network model.
     :param x: Input data.
     :param y: Output data (labels).
+    :param num_bins: Number of bins to use for uniform binning.
     :return: A list of mutual information values for each layer.
     """
     # Make sure we don't affect gradient elsewhere
@@ -19,9 +19,6 @@ def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray, num_bins: int =
 
     mi_with_input = []
     mi_with_output = []
-
-    binned_x = bin_into_uniform_bins(x, num_bins=num_bins)
-    binned_y = bin_into_uniform_bins(y, num_bins=num_bins)
 
     # Function to extract activations from each layer
     def _get_activations(model, x):
@@ -37,14 +34,12 @@ def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray, num_bins: int =
 
     # Compute MI between input and each layer's activations
     for act in activations:
-        binned_act = bin_into_uniform_bins(act, num_bins=num_bins)
-        mi_input_layer = mutual_information_from_binned_vectors(binned_x, binned_act)
+        mi_input_layer = uniformly_bin_and_compute_mi(x, act, num_bins=num_bins)
         mi_with_input.append(mi_input_layer)
 
     # Compute MI between each layer's activations and output
     for act in activations:
-        binned_act = bin_into_uniform_bins(act, num_bins=num_bins)
-        mi_layer_output = mutual_information_from_binned_vectors(binned_act, binned_y)
+        mi_layer_output = uniformly_bin_and_compute_mi(act, y, num_bins=num_bins)
         mi_with_output.append(mi_layer_output)
 
     return mi_with_input, mi_with_output

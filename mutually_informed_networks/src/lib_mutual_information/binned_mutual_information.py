@@ -1,5 +1,21 @@
 import jax.numpy as jnp
 
+from .binning import bin_into_uniform_bins
+
+
+def uniformly_bin_and_compute_mi(x: jnp.ndarray, y: jnp.ndarray, num_bins: int) -> jnp.ndarray:
+    """
+    Uniformly bin the input arrays `x` and `y` into `num_bins` bins and compute the mutual information between them.
+    :param x: Input array.
+    :param y: Target array.
+    :param num_bins: Number of bins to use for uniform binning.
+    :return: Approximate mutual information between binned `x` and `y`.
+    """
+    binned_x = bin_into_uniform_bins(x, num_bins=num_bins)
+    binned_y = bin_into_uniform_bins(y, num_bins=num_bins)
+    mi = mutual_information_from_binned_vectors(binned_x, binned_y)
+    return mi
+
 
 def mutual_information_from_binned_vectors(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     """
