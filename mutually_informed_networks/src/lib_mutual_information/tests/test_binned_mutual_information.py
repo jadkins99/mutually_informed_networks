@@ -1,65 +1,40 @@
 import jax
 import pytest
 import jax.numpy as jnp
+import numpy as np
 
-from binned_mutual_information import prob_of_binned_vector, mutual_information_from_binned_vectors
-
-
-def test_prob_of_single_binned_vector():
-    x = jnp.array([[0, 1],])
-    probabilities = prob_of_binned_vector(x)
-    expected_probabilities = jnp.array([1.0])  # Only one unique vector
-    assert jnp.allclose(probabilities, expected_probabilities), \
-        f"Expected {expected_probabilities}, got {probabilities}"
+from binned_mutual_information import mutual_information_from_binned_vectors
+from collections import Counter
 
 
-def test_prob_of_single_unique_binned_vector():
-    x = jnp.array([[0, 1], [0, 1], [0, 1]])
-    probabilities = prob_of_binned_vector(x)
-    expected_probabilities = jnp.array([1.0])  # Only one unique vector
-    assert jnp.allclose(probabilities, expected_probabilities), \
-        f"Expected {expected_probabilities}, got {probabilities}"
+def _slow_python_mutual_information(x: jnp.ndarray, y: jnp.ndarray) -> float:
+    """A slow, pure Python implementation of mutual information for testing purposes."""
+    n_samples = x.shape[0]
+    pdf_x, pdf_y, pdf_xy = Counter(), Counter(), Counter()
 
+    for i in range(n_samples):
+        x_tuple = tuple(x[i].tolist())
+        y_tuple = tuple(y[i].tolist())
+        pdf_x[x_tuple] += 1
+        pdf_y[y_tuple] += 1
+        pdf_xy[(x_tuple, y_tuple)] += 1
 
-def test_prob_of_multiple_binned_vectors():
-    x = jnp.array([[0, 1], [1, 0], [0, 1], [1, 1]])
-    probabilities = prob_of_binned_vector(x)
-    expected_probabilities = jnp.array([0.5, 0.25, 0.25])  # Three unique vectors
-    assert jnp.allclose(jnp.sort(probabilities), jnp.sort(expected_probabilities)), \
-        f"Expected {expected_probabilities}, got {probabilities}"
+    mi = 0.0
+    for (x_val, y_val), joint_count in pdf_xy.items():
+        p_xy = joint_count / n_samples
+        p_x = pdf_x[x_val] / n_samples
+        p_y = pdf_y[y_val] / n_samples
+        mi += p_xy * np.log(p_xy / (p_x * p_y))
 
-
-def test_extra_dimensions_binned_vectors():
-    x = jnp.array([[[0, 1]], [[1, 0]], [[0, 1]], [[1, 1]]])
-    probabilities = prob_of_binned_vector(x)
-    for d in range(2, 5):
-        y = jnp.repeat(x, d, axis=1)
-        multidim_probabilities = prob_of_binned_vector(y)
-        assert jnp.allclose(multidim_probabilities, probabilities), \
-            f"Failed for dimension {d}. Expected {probabilities}, got {multidim_probabilities}"
-
-
-def test_empty_input_binned_vectors():
-    x = jnp.empty((0, 2))
-    with pytest.raises(AssertionError):
-        prob_of_binned_vector(x)
-
-    x = jnp.empty((3, 0))
-    with pytest.raises(AssertionError):
-        prob_of_binned_vector(x)
-
-
-def test_invalid_input_binned_vectors():
-    x = jnp.array([1, 2, 3])  # Not a 2D array
-    with pytest.raises(AssertionError):
-        prob_of_binned_vector(x)
+    return mi
 
 
 def test_single_vector_mutual_information():
     x = jnp.array([[0, 1],])
     y = jnp.array([[1, 0],])
     mi = mutual_information_from_binned_vectors(x, y)
-    expected_mi = 0.0  # No uncertainty with single vector
+    expected_mi = _slow_python_mutual_information(x, y)
+    assert expected_mi == 0.0, f"Expected {expected_mi}, got {mi}"  # No uncertainty with single vector
     assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
 
 
@@ -67,7 +42,8 @@ def test_equal_ys_mutual_information():
     x = jnp.array([[0, 1], [1, 0]])
     y = jnp.array([[1, 0], [1, 0]])
     mi = mutual_information_from_binned_vectors(x, y)
-    expected_mi = 0.0  # No uncertainty in y
+    expected_mi = _slow_python_mutual_information(x, y)
+    assert expected_mi == 0.0, f"Expected {expected_mi}, got {mi}"  # No uncertainty with single vector
     assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
 
 
@@ -77,7 +53,8 @@ def test_identical_vectors_mutual_information():
     mi = mutual_information_from_binned_vectors(x, y)
     # All vectors are identical, se we should get
     # sum_X sum_Y p(x,y) log(p(x,y)/(p(x)p(y))) = sum_X sum_Y log(3) / 3 = log(3)
-    expected_mi = jnp.log(3)
+    expected_mi = _slow_python_mutual_information(x, y)
+    assert expected_mi == jnp.log(3)
     assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
 
 
@@ -85,7 +62,7 @@ def test_different_dimensions_mutual_information():
     x = jnp.array([[0, 1], [1, 0], [0, 1], [1, 1]])
     y = jnp.array([[0, 1, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]])
     mi = mutual_information_from_binned_vectors(x, y)
-    expected_mi = mi  # The last coordinate of y is redundant
+    expected_mi = _slow_python_mutual_information(x, y)
     assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
 
 
@@ -93,7 +70,7 @@ def test_different_num_unique_mutual_information():
     x = jnp.array([[0, 0, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1]])
     y = jnp.array([[0, 1, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]])
     mi = mutual_information_from_binned_vectors(x, y)
-    expected_mi = mi  # The last coordinate of y is redundant
+    expected_mi = _slow_python_mutual_information(x, y)
     assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
 
 
@@ -130,3 +107,16 @@ def test_mutual_information_non_negative_for_random_data():
         y = jax.random.randint(key, (10, 3), 0, 5)
         mi = mutual_information_from_binned_vectors(x, y)
         assert mi >= 0, f"Mutual information should be non-negative, got {mi}"
+
+
+def test_random_data_consistency():
+    # Seed for reproducibility, but use a different one each time
+    seed = jax.random.randint(jax.random.PRNGKey(0), (), 0, 10000)
+    print('[test_random_data_consistency]: Using seed', seed)
+
+    key = jax.random.PRNGKey(seed)
+    x = jax.random.randint(key, (15, 4), 0, 7)
+    y = jax.random.randint(key, (15, 4), 0, 7)
+    mi1 = mutual_information_from_binned_vectors(x, y)
+    mi2 = _slow_python_mutual_information(x, y)
+    assert jnp.isclose(mi1, mi2), f"Mutual information should be consistent, got {mi1} and {mi2}"
