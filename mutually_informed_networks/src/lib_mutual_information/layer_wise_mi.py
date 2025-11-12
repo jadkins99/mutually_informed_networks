@@ -24,7 +24,7 @@ def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray) -> tuple[list[f
         activations = []
         current_input = x
         for layer in model.layers:
-            current_input = layer(current_input)
+            current_input = jax.vmap(layer)(current_input)
             activations.append(current_input)
         return activations
 
