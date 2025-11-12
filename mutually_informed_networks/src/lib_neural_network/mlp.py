@@ -27,4 +27,4 @@ class MLP(eqx.Module):
     def __call__(self, x):
         for layer in self.layers[:-1]:
             x = jax.nn.relu(layer(x))
-        return jax.nn.sigmoid(self.layers[-1](x))
+        return jax.nn.softmax(self.layers[-1](x))
