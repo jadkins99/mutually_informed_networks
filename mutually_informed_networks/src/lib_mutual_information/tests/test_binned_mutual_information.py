@@ -76,8 +76,8 @@ def test_identical_vectors_mutual_information():
     y = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
     mi = mutual_information_from_binned_vectors(x, y)
     # All vectors are identical, se we should get
-    # sum_X sum_Y p(x,y) log(p(x,y)/(p(x)p(y))) = sum_X sum_Y log(3) / 3 = log(3) * 3
-    expected_mi = jnp.log(3) * 3
+    # sum_X sum_Y p(x,y) log(p(x,y)/(p(x)p(y))) = sum_X sum_Y log(3) / 3 = log(3)
+    expected_mi = jnp.log(3)
     assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
 
 
