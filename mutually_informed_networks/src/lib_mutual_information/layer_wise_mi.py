@@ -2,9 +2,10 @@ import jax
 import jax.numpy as jnp
 
 from binned_mutual_information import mutual_information_from_binned_vectors
+from binning import bin_into_uniform_bins
 
 
-def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray) -> tuple[list[float], list[float]]:
+def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray, num_bins: int = 30) -> tuple[list[float], list[float]]:
     """
     Compute the layer-wise mutual information between the inputs and each layer's activations,
     as well as between each layer's activations and the outputs.
@@ -18,6 +19,9 @@ def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray) -> tuple[list[f
 
     mi_with_input = []
     mi_with_output = []
+
+    binned_x = bin_into_uniform_bins(x, num_bins=num_bins)
+    binned_y = bin_into_uniform_bins(y, num_bins=num_bins)
 
     # Function to extract activations from each layer
     def _get_activations(model, x):
@@ -33,12 +37,14 @@ def compute_layer_wise_mi(model, x: jnp.ndarray, y: jnp.ndarray) -> tuple[list[f
 
     # Compute MI between input and each layer's activations
     for act in activations:
-        mi_input_layer = mutual_information_from_binned_vectors(x.astype(jnp.int32), act.astype(jnp.int32))
+        binned_act = bin_into_uniform_bins(act, num_bins=num_bins)
+        mi_input_layer = mutual_information_from_binned_vectors(binned_x, binned_act)
         mi_with_input.append(mi_input_layer)
 
     # Compute MI between each layer's activations and output
     for act in activations:
-        mi_layer_output = mutual_information_from_binned_vectors(act.astype(jnp.int32), y.astype(jnp.int32))
+        binned_act = bin_into_uniform_bins(act, num_bins=num_bins)
+        mi_layer_output = mutual_information_from_binned_vectors(binned_act, binned_y)
         mi_with_output.append(mi_layer_output)
 
     return mi_with_input, mi_with_output
