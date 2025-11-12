@@ -30,16 +30,28 @@ def mutual_information_from_binned_vectors(x: jnp.ndarray, y: jnp.ndarray) -> jn
     assert (jnp.array(x.shape)[:-1] == jnp.array(y.shape)[:-1]).all(), \
         "x and y must have the same number of rows (samples)."
 
-    # Compute unique vectors and their probabilities
-    px = prob_of_binned_vector(x)
-    py = prob_of_binned_vector(y)
+    # Number of samples
+    n = x.shape[0]
 
-    # Compute joint distribution
-    joint_xy = jnp.concatenate((x, y), axis=-1)
-    pxy = prob_of_binned_vector(joint_xy)
+    # Map each unique row in x and y to integer ids
+    _, x_ids = jnp.unique(x, axis=0, return_inverse=True)
+    _, y_ids = jnp.unique(y, axis=0, return_inverse=True)
+    nx = int(x_ids.max()) + 1
+    ny = int(y_ids.max()) + 1
+
+    # Build joint distribution pxy based on counts via a single bincount on combined ids
+    joint_ids = x_ids * ny + y_ids
+    joint_counts = jnp.bincount(joint_ids, length=nx * ny)
+    pxy = (joint_counts / n).reshape(nx, ny)
+
+    # Marginals from the joint distribution
+    px = pxy.sum(axis=1, keepdims=True)       # shape (nx, 1)
+    py = pxy.sum(axis=0, keepdims=True)       # shape (1, ny)
 
     # Compute mutual information
-    mi = jnp.sum(pxy * jnp.log(pxy / (px[:, None] * py[None, :] + 1e-10) + 1e-10)).mean()
-    return mi
+    mask = pxy > 0
+    log_term = jnp.log(pxy[mask]) - jnp.log(px @ py)[mask]
+    mi_nats = jnp.sum(pxy[mask] * log_term)
+    return mi_nats
 
 

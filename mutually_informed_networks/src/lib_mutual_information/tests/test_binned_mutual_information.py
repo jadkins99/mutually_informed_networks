@@ -89,6 +89,14 @@ def test_different_dimensions_mutual_information():
     assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
 
 
+def test_different_num_unique_mutual_information():
+    x = jnp.array([[0, 0, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1]])
+    y = jnp.array([[0, 1, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]])
+    mi = mutual_information_from_binned_vectors(x, y)
+    expected_mi = mi  # The last coordinate of y is redundant
+    assert jnp.isclose(mi, expected_mi), f"Expected {expected_mi}, got {mi}"
+
+
 def test_invalid_input_mutual_information():
     x = jnp.array([[0, 1], [1, 0]])
     y = jnp.array([[1, 0]])  # Different number of rows
