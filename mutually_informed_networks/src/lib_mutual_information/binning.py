@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-
+from jax import lax
 
 
 def bin_into_uniform_bins(data: jnp.ndarray, num_bins: int):
@@ -11,6 +11,7 @@ def bin_into_uniform_bins(data: jnp.ndarray, num_bins: int):
     :return: Binned data as integer indices.
     """
     assert len(data.shape) > 1, "Input data must have at least two dimensions."
+    assert data.shape[-1] > 0, "Input data must have at least one feature."
 
     def _bin_feature_uniformly(col: jnp.ndarray) -> jnp.ndarray:
         """
@@ -45,68 +46,99 @@ def bin_into_equal_population_bins(data: jnp.ndarray, num_bins: int) -> jnp.ndar
     Bin the input data into bins with approximately equal population. Since we are using ReLUs, the data
     may include a lot of zeros. We put those into a separate bin, if there are any such points. The remaining
     data points are then binned into the remaining bins based on quantiles.
+    DISCLAIMER: This code was written by ChatGPT. I tried to test it thoroughly, but I am not sure if it is bug-free.
     :param data: Input data to be binned.
     :param num_bins: Number of bins to create.
     :return: Binned data as integer indices.
     """
     assert len(data.shape) > 1, "Input data must have at least two dimensions."
+    assert data.shape[-1] > 0, "Input data must have at least one feature."
 
-    def bin_one_feature(col: jnp.ndarray) -> jnp.ndarray:
-        zero_mask = (col == 0)
-        has_zero = jnp.any(zero_mask)
+    def bin_equal_population_with_ties_jax_1d(x: jnp.ndarray) -> jnp.ndarray:
+        """
+        Tie-respecting equal-population binning for 1D data in JAX.
 
-        def bin_without_zeros(col_: jnp.ndarray) -> jnp.ndarray:
-            # Original behaviour: bin all values into 0..num_bins-1 via quantiles
-            qs = jnp.linspace(0.0, 1.0, num_bins + 1)
-            edges = jnp.quantile(col_, qs)
-            edges = edges.at[0].add(-1e-3)
-            edges = edges.at[-1].add(1e-3)
-            binned = jnp.digitize(col_, edges) - 1
-            return binned.astype(jnp.int32)
+        Returns binned indices of same shape as x, with bins 0..(k-1),
+        where k <= num_bins if there aren't enough distinct cut positions.
+        """
+        x = jnp.asarray(x).ravel()
+        N = x.shape[0]
 
-        def bin_with_zeros(col_: jnp.ndarray) -> jnp.ndarray:
-            # If everything is zero, just return zeros
-            has_nonzero = jnp.any(col_ != 0)
+        # Degenerate case: everything in bin 0
+        if num_bins <= 1 or N == 0:
+            return jnp.zeros_like(x, dtype=jnp.int32)
 
-            def some_nonzeros(col2: jnp.ndarray) -> jnp.ndarray:
-                remaining_bins = num_bins - 1
+        # 1) Sort the data
+        x_sorted = jnp.sort(x)
 
-                # Replace zeros by NaN so they are ignored in nanquantile
-                col_for_q = jnp.where(col2 == 0, jnp.nan, col2)
+        # 2) Candidate cut positions: indices i where x_sorted[i] != x_sorted[i+1]
+        #    We represent candidates with a boolean mask over indices 0..N-1.
+        #    Last index can never be a cut position.
+        if N > 1:
+            diffs = x_sorted[:-1] != x_sorted[1:]  # shape (N-1,)
+            candidate_mask = jnp.concatenate(
+                [diffs, jnp.array([False], dtype=bool)]
+            )  # shape (N,)
+        else:
+            candidate_mask = jnp.array([False], dtype=bool)
 
-                qs = jnp.linspace(0.0, 1.0, remaining_bins + 1)
-                edges_nz = jnp.nanquantile(col_for_q, qs)
+        idxs_all = jnp.arange(N, dtype=jnp.int32)
+        cum_probs = (idxs_all + 1) / N  # (i+1)/N
 
-                # Widen edges a bit
-                edges_nz = edges_nz.at[0].add(-1e-3)
-                edges_nz = edges_nz.at[-1].add(1e-3)
+        # 3) Target cumulative probabilities for bins
+        n_cuts = num_bins - 1
+        targets = jnp.linspace(1.0 / num_bins,
+                               1.0 - 1.0 / num_bins,
+                               n_cuts)
 
-                # Digitize *all* values with non-zero edges
-                # This gives bins 0..remaining_bins-1 for non-zeros
-                # (zeros may get something weird; we'll override them)
-                binned_nz = jnp.digitize(col2, edges_nz) - 1
+        # 4) Sequential "nearest unused" selection of cut indices
+        init_prev_idx = jnp.int32(-1)
+        init_cut_indices = jnp.full((n_cuts,), -1, dtype=jnp.int32)
 
-                # Shift to global bins 1..num_bins-1
-                binned_global = binned_nz + 1
+        def body_fun(i, carry):
+            prev_idx, cut_indices = carry
+            t = targets[i]
 
-                # Force zeros to bin 0
-                binned_global = jnp.where(col2 == 0, 0, binned_global)
-                return binned_global.astype(jnp.int32)
+            start = prev_idx + 1
 
-            def no_nonzeros(col2: jnp.ndarray) -> jnp.ndarray:
-                # All values are zero
-                return jnp.zeros_like(col2, dtype=jnp.int32)
+            # Valid candidates: not yet used (>= start), not last index, and a cut candidate
+            valid = (idxs_all >= start) & (idxs_all < (N - 1)) & candidate_mask
 
-            return jax.lax.cond(has_nonzero, some_nonzeros, no_nonzeros, col_)
+            # Distance in probability space; invalid positions get +inf
+            diffs = jnp.where(valid, jnp.abs(cum_probs - t), jnp.inf)
 
-        # Choose branch based on presence of zeros
-        return jax.lax.cond(has_zero, bin_with_zeros, bin_without_zeros, col)
+            best_idx = jnp.argmin(diffs)
+            any_valid = jnp.any(valid)
+
+            best_idx = jnp.where(any_valid, best_idx, prev_idx)
+            cut_indices = cut_indices.at[i].set(jnp.where(any_valid, best_idx, -1))
+            prev_idx = jnp.where(any_valid, best_idx, prev_idx)
+
+            return (prev_idx, cut_indices)
+
+        _, cut_indices = lax.fori_loop(0, n_cuts, body_fun,
+                                       (init_prev_idx, init_cut_indices))
+
+        # 5) Convert cut indices to edge values
+        #    -1 means "no cut here"; we map those to +inf so they never affect binning.
+        clipped = jnp.clip(cut_indices, 0, jnp.maximum(N - 1, 0))
+        inner_edges_all = x_sorted[clipped]
+        valid_mask = cut_indices >= 0
+        inner_edges = jnp.where(valid_mask, inner_edges_all, jnp.inf)
+
+        # 6) Assign bins:
+        #    bins = number of edges strictly less than x
+        #         = sum(x > edge_k over k)
+        cmp = x[:, None] > inner_edges[None, :]  # shape (N, n_cuts)
+        bins = jnp.sum(cmp, axis=1).astype(jnp.int32)
+
+        return bins.reshape(x.shape)
 
     # Move last axis to front: (..., D) -> (D, ...)
     data_swapped = jnp.moveaxis(data, -1, 0)
 
     # vmap over the feature axis (each feature gets its own binning)
-    binned_swapped = jax.vmap(bin_one_feature, in_axes=0, out_axes=0)(data_swapped)
+    binned_swapped = jax.vmap(bin_equal_population_with_ties_jax_1d, in_axes=0, out_axes=0)(data_swapped)
 
     # Move axes back: (D, ...) -> (..., D)
     binned_data = jnp.moveaxis(binned_swapped, 0, -1)
