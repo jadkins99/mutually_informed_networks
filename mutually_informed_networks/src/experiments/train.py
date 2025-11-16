@@ -6,7 +6,7 @@ import optax
 
 from dataloader import dataloader
 from function_inequality_binary_classification import get_linear_dataset
-from layer_wise_mi import compute_layer_wise_mi_with_uniform_binning
+from layer_wise_mi import compute_layer_wise_mi_with_uniform_binning, compute_layer_wise_mi_with_quantile_binning
 from metrics import compute_accuracy
 from mi_plane import plot_mi_plane
 from mlp import MLP
@@ -47,9 +47,9 @@ def train_on_dataset(
         loss = loss.item()
         print(f"step={step}, loss={loss}")
         losses.append(loss)
-        if (step + 1) % 10 == 0 and step > 50:
-            mi_with_input, mi_with_output = compute_layer_wise_mi_with_uniform_binning(
-                model, dataset[0], dataset[1], num_bins=30)
+        if step % 25 == 0 or (step + 1) == steps:
+            mi_with_input, mi_with_output = compute_layer_wise_mi_with_quantile_binning(
+                model, dataset[0], dataset[1], num_bins=3)
             mi_with_input_history.append(mi_with_input)
             mi_with_output_history.append(mi_with_output)
 
@@ -61,7 +61,7 @@ def train_on_dataset(
 
 if __name__ == "__main__":
     data_key, model_key = jrandom.split(jrandom.PRNGKey(seed=42), 2)
-    xs, ys = get_mod_n_dataset(dataset_size=10_000, key=data_key, n=4)
+    xs, ys = get_mod_n_dataset(dataset_size=100_000, key=data_key, n=4)
     model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], width_size=8, depth=3, key=model_key)
 
     model, xs, ys, pred_ys, losses, mi_input, mi_output = train_on_dataset(
@@ -69,6 +69,6 @@ if __name__ == "__main__":
         model=model,
         batch_size=32,
         learning_rate=3e-3,
-        steps=200,
+        steps=400,
     )
     plot_mi_plane(mi_input, mi_output)
