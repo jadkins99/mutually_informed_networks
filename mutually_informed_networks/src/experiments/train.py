@@ -61,8 +61,8 @@ def train_on_dataset(
 
 if __name__ == "__main__":
     data_key, model_key = jrandom.split(jrandom.PRNGKey(seed=42), 2)
-    xs, ys = get_mod_n_dataset(dataset_size=100_000, key=data_key, n=4)
-    model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], layer_sizes=[8, 6, 4], key=model_key)
+    xs, ys = get_mod_n_dataset(dataset_size=1_000, key=data_key, n=4)
+    model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], layer_sizes=[10, 8, 6], key=model_key)
 
     model, xs, ys, pred_ys, losses, mi_input, mi_output = train_on_dataset(
         dataset=(xs, ys),
