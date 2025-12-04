@@ -31,6 +31,18 @@ def plot_mi_plane(mi_x_per_layer: list[list[float]], mi_y_per_layer: list[list[f
 
 
 def _plot_layer_in_mi_plane(ax, mi_x: list[float], mi_y: list[float], layer_idx: int):
-    """ Plots the mutual information trajectory of a single layer in the MI plane connected with a line. """
-    ax.plot(mi_x, mi_y, marker='o', linestyle='-', label=f'Layer {layer_idx}')
+    """
+    Plots the mutual information trajectory of a single layer in the MI plane connected with a line.
+    The points are marked with different symbols depending on the layer index.
+    The color of the line spans a colormap based from the beginning to the end of training.
+    """
+    cmap = plt.get_cmap('viridis')
+    marker = ['o', 's', '^', 'D', 'v', '>', '<', 'p', '*', 'h'][layer_idx % 10]
+    num_points = len(mi_x)
+
+    # Plot the initial point separately to include the marker and legend
+    ax.plot(mi_x[0], mi_y[0], color=cmap(1), marker=marker, label=f'Layer {layer_idx}')
+    for i in range(num_points - 1):
+        color = cmap(1 - i / (num_points - 1))
+        ax.plot(mi_x[i:i + 2], mi_y[i:i + 2], color=color, marker='')
     return ax
