@@ -89,8 +89,8 @@ def mutual_information_from_binned_vectors(x: jnp.ndarray, y: jnp.ndarray) -> jn
     y_ids = _row_ids(y)                          # (n,)
 
     # For the joint, just concatenate the vectors
-    joint = jnp.concatenate([x, y], axis=1)      # (n, dx+dy)
-    joint_ids = _row_ids(joint)                  # (n,)
+    joint_pairs = jnp.stack([x_ids, y_ids], axis=1)  # shape (n, 2)
+    joint_ids = _row_ids(joint_pairs)
 
     # Counts for each id (length n, many entries will be zero)
     counts_x = jnp.bincount(x_ids, length=n)     # (n,)
