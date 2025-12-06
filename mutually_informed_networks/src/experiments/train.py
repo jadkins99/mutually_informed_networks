@@ -45,13 +45,13 @@ def train_on_dataset(
     for step, (x, y) in zip(range(steps), iter_data):
         loss, model, opt_state = make_step(model, x, y, optim, opt_state)
         loss = loss.item()
-        print(f"step={step}, loss={loss}")
         losses.append(loss)
         if step % 25 == 0 or (step + 1) == steps:
             mi_with_input, mi_with_output = compute_layer_wise_mi_with_quantile_binning(
                 model, dataset[0], dataset[1], num_bins=3)
             mi_with_input_history.append(mi_with_input)
             mi_with_output_history.append(mi_with_output)
+            print(f"Step={step}, Loss={loss}, MI_input={mi_with_input}, MI_output={mi_with_output}")
 
     pred_ys = jax.vmap(model)(xs)
     final_accuracy = compute_accuracy(ys=ys, pred_ys=pred_ys)
@@ -60,15 +60,22 @@ def train_on_dataset(
 
 
 if __name__ == "__main__":
-    data_key, model_key = jrandom.split(jrandom.PRNGKey(seed=42), 2)
-    xs, ys = get_mod_n_dataset(dataset_size=1_000, key=data_key, n=4)
-    model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], layer_sizes=[10, 8, 6], key=model_key)
+    mi_inputs, mi_outputs = [], []
+    for seed in range(100):
+        data_key, model_key = jrandom.split(jrandom.PRNGKey(seed=seed), 2)
+        xs, ys = get_mod_n_dataset(dataset_size=1_000, key=data_key, n=4)
+        model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], layer_sizes=[12, 10, 8, 6], key=model_key)
 
-    model, xs, ys, pred_ys, losses, mi_input, mi_output = train_on_dataset(
-        dataset=(xs, ys),
-        model=model,
-        batch_size=32,
-        learning_rate=3e-3,
-        steps=400,
-    )
+        model, xs, ys, pred_ys, losses, mi_input, mi_output = train_on_dataset(
+            dataset=(xs, ys),
+            model=model,
+            batch_size=32,
+            learning_rate=1e-3,
+            steps=400,
+        )
+        mi_inputs.append(mi_input)
+        mi_outputs.append(mi_output)
+
+    mi_input = jnp.mean(jnp.array(mi_inputs), axis=0).tolist()
+    mi_output = jnp.mean(jnp.array(mi_outputs), axis=0).tolist()
     plot_mi_plane(mi_input, mi_output)
