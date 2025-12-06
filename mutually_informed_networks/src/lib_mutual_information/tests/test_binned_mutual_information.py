@@ -30,44 +30,6 @@ def _slow_python_mutual_information(x: jnp.ndarray, y: jnp.ndarray) -> float:
     return mi
 
 
-def _slow_jax_mutual_information(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-    """
-    Compute the mutual information between two arrays of binned vectors. The computation proceeds by first finding all
-    unique vectors in `x` and `y`. Then the marginal probabilities are obtained by counting the occurrences of each
-    unique vector in `x` and `y`. Finally, the joint probabilities are computed by concatenating the pairs of `x` and `y`
-    and counting their occurrences in the same way.
-
-    This is a legacy slow implementation for testing purposes.
-    :param x: 2D array where each row is a binned vector.
-    :param y: 2D array where each row is a binned vector.
-    :return: Approximate mutual information between `x` and `y`.
-    """
-
-    # Number of samples
-    n = x.shape[0]
-
-    # Map each unique row in x and y to integer ids
-    _, x_ids = jnp.unique(x, axis=0, return_inverse=True)
-    _, y_ids = jnp.unique(y, axis=0, return_inverse=True)
-    nx = int(x_ids.max()) + 1
-    ny = int(y_ids.max()) + 1
-
-    # Build joint distribution pxy based on counts via a single bincount on combined ids
-    joint_ids = x_ids * ny + y_ids
-    joint_counts = jnp.bincount(joint_ids, length=nx * ny)
-    pxy = (joint_counts / n).reshape(nx, ny)
-
-    # Marginals from the joint distribution
-    px = pxy.sum(axis=1, keepdims=True)       # shape (nx, 1)
-    py = pxy.sum(axis=0, keepdims=True)       # shape (1, ny)
-
-    # Compute mutual information
-    mask = pxy > 0
-    log_term = jnp.log(pxy[mask]) - jnp.log(px @ py)[mask]
-    mi_nats = jnp.sum(pxy[mask] * log_term)
-    return mi_nats
-
-
 def test_single_vector_mutual_information():
     x = jnp.array([[0, 1],])
     y = jnp.array([[1, 0],])
@@ -142,7 +104,7 @@ def test_mutual_information_non_negative_for_random_data():
         assert mi >= 0, f"Mutual information should be non-negative, got {mi}"
 
 
-@pytest.mark.parametrize('mi_test_impl', [_slow_python_mutual_information, _slow_jax_mutual_information])
+@pytest.mark.parametrize('mi_test_impl', [_slow_python_mutual_information])
 def test_random_data_consistency(mi_test_impl):
     # Seed for reproducibility, but use a different one each time
     seed = jax.random.randint(jax.random.PRNGKey(0), (), 0, 10000)
