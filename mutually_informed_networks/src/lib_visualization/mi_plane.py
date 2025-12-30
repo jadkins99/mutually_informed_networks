@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_mi_plane(mi_x_per_layer: list[list[float]], mi_y_per_layer: list[list[float]]):
+def plot_mi_plane(mi_x_per_layer: list[list[float]], mi_y_per_layer: list[list[float]], idx: int = None):
     """
     Plots the mutual information for each layer in a 2D plane where the x-axis represents
     the mutual information with the input and the y-axis represents the mutual information
@@ -10,6 +10,7 @@ def plot_mi_plane(mi_x_per_layer: list[list[float]], mi_y_per_layer: list[list[f
 
     :param mi_x_per_layer: For each layer, a list of mutual information values with the input along each epoch.
     :param mi_y_per_layer: For each layer, a list of mutual information values with the output along each epoch.
+    :param idx: Optional index under which the plot should be saved.
     """
     fig, ax = plt.subplots()
 
@@ -27,7 +28,7 @@ def plot_mi_plane(mi_x_per_layer: list[list[float]], mi_y_per_layer: list[list[f
     ax.set_title('Mutual Information Plane')
     ax.legend()
 
-    plt.savefig('mi_plane.png')  # TODO: save to a better place
+    plt.savefig(f'mi_plane_{idx}.png')  # TODO: save to a better place
 
 
 def _plot_layer_in_mi_plane(ax, mi_x: list[float], mi_y: list[float], layer_idx: int):
