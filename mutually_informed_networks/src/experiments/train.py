@@ -15,7 +15,7 @@ from mod_n_classification import get_mod_n_dataset
 
 
 # Important for efficiency whenever you use JAX: wrap everything into a single JIT region.
-# @eqx.filter_jit
+@eqx.filter_jit
 def make_step(
         model: eqx.Module,
         x: jnp.ndarray,
@@ -35,6 +35,7 @@ def train_on_dataset(
     batch_size: int = 32,
     learning_rate: float = 3e-3,
     steps: int = 200,
+    compute_mi_every: int = 25,
 ):
     iter_data = dataloader(dataset, batch_size)
 
@@ -46,17 +47,15 @@ def train_on_dataset(
         loss, model, opt_state = make_step(model, x, y, optim, opt_state)
         loss = loss.item()
         losses.append(loss)
-        if step % 25 == 0 or (step + 1) == steps:
+
+        if compute_mi_every > 0 and (step % compute_mi_every == 0 or (step + 1) == steps):
             mi_with_input, mi_with_output = compute_layer_wise_mi_with_quantile_binning(
                 model, dataset[0], dataset[1], num_bins=3)
             mi_with_input_history.append(mi_with_input)
             mi_with_output_history.append(mi_with_output)
-            print(f"Step={step}, Loss={loss}, MI_input={mi_with_input}, MI_output={mi_with_output}")
 
-    pred_ys = jax.vmap(model)(xs)
-    final_accuracy = compute_accuracy(ys=ys, pred_ys=pred_ys)
-    print(f"final_accuracy={final_accuracy}")
-    return model, xs, ys, pred_ys, losses, mi_with_input_history, mi_with_output_history
+    final_accuracy = compute_accuracy(ys=dataset[1], pred_ys=jax.vmap(model)(dataset[0]))
+    return model, losses, final_accuracy, mi_with_input_history, mi_with_output_history
 
 
 if __name__ == "__main__":
@@ -66,7 +65,7 @@ if __name__ == "__main__":
         xs, ys = get_mod_n_dataset(dataset_size=1_000, key=data_key, n=4)
         model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], layer_sizes=[12, 10, 8, 6], key=model_key)
 
-        model, xs, ys, pred_ys, losses, mi_input, mi_output = train_on_dataset(
+        model, losses, final_accuracy, mi_input, mi_output = train_on_dataset(
             dataset=(xs, ys),
             model=model,
             batch_size=32,
