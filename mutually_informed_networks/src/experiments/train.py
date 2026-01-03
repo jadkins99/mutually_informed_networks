@@ -5,6 +5,7 @@ import jax.random as jrandom
 import optax
 
 from dataloader import dataloader
+from drop_neuron_mi import mutual_information_without_neuron, DropNeuronResetHeuristicCallback
 from function_inequality_binary_classification import get_linear_dataset
 from layer_wise_mi import compute_layer_wise_mi_with_uniform_binning, compute_layer_wise_mi_with_quantile_binning
 from metrics import compute_accuracy
@@ -43,6 +44,9 @@ def train_on_dataset(
     opt_state = optim.init(model)
     losses = []
     mi_with_input_history, mi_with_output_history = [], []
+    mi_input_diffs, mi_output_diffs = {}, {}
+
+    model_reset_callback = DropNeuronResetHeuristicCallback(num_bins=3, reset_threshold=0.1)
     for step, (x, y) in zip(range(steps), iter_data):
         loss, model, opt_state = make_step(model, x, y, optim, opt_state)
         loss = loss.item()
@@ -54,8 +58,20 @@ def train_on_dataset(
             mi_with_input_history.append(mi_with_input)
             mi_with_output_history.append(mi_with_output)
 
+            mi_input_diffs = {f"Layer {i}": [] for i in range(len(mi_with_input))}
+            mi_output_diffs = {f"Layer {i}": [] for i in range(len(mi_with_input))}
+            for layer_idx in range(len(model.layers)):
+                for neuron_idx in range(model.layers[layer_idx].weight.shape[0]):
+                    mi_with_input_n, mi_with_output_n = mutual_information_without_neuron(
+                        model, layer_idx, neuron_idx, dataset[0], dataset[1], num_bins=3)
+                    mi_input_diffs[f"Layer {layer_idx}"].append(mi_with_input[layer_idx] - mi_with_input_n[layer_idx])
+                    mi_output_diffs[f"Layer {layer_idx}"].append(mi_with_output[layer_idx] - mi_with_output_n[layer_idx])
+
+            model = model_reset_callback(model, dataset[0], dataset[1])
+
     final_accuracy = compute_accuracy(ys=dataset[1], pred_ys=jax.vmap(model)(dataset[0]))
-    return model, losses, final_accuracy, mi_with_input_history, mi_with_output_history
+    print(model_reset_callback.mean_mi_drop_per_neuron)
+    return model, losses, final_accuracy, mi_with_input_history, mi_with_output_history, mi_input_diffs, mi_output_diffs
 
 
 if __name__ == "__main__":

@@ -11,40 +11,43 @@ from mutually_informed_networks.src.experiments.train import train_on_dataset
 def get_trajectory_losses(seed):
     data_key, model_key = jrandom.split(jrandom.PRNGKey(seed=0), 2)
     xs, ys = get_mod_n_dataset(dataset_size=256, key=data_key, n=4)
-    model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], layer_sizes=[8, 8, 8], key=model_key)
+    model = MLP(in_size=xs[0].shape[-1], out_size=ys[0].shape[-1], layer_sizes=[4, 3, 2], key=model_key)
 
     final_losses = []
     final_accuracies = []
     mi_inputs, mi_outputs = [], []
-    for step in range(100):
+    mi_input_diffss, mi_output_diffss = [], []
+    for step in range(20):
         print(f"Training trajectory {step} with seed {step + seed}...")
         data_key = jrandom.split(jrandom.PRNGKey(seed=step + seed), 1)[0]
         xs, ys = get_mod_n_dataset(dataset_size=256, key=data_key, n=4, shuffle_bits=True)
 
-        compute_mi = step < 4 or step % 10 == 0 or step == 49
-        model, losses, final_accuracy, mi_input, mi_output = train_on_dataset(
+        compute_mi = True#step < 4 or step % 10 == 0 or step == 49
+        model, losses, final_accuracy, mi_input, mi_output, mi_input_diffs, mi_output_diffs = train_on_dataset(
             dataset=(xs, ys),
             model=model,
             batch_size=32,
             learning_rate=1e-3,
             steps=1000,
-            compute_mi_every=25 if compute_mi else 0,
+            compute_mi_every=100 if compute_mi else 0,
         )
         final_losses.append(losses[-1])
         final_accuracies.append(final_accuracy)
         if compute_mi:
             mi_inputs.append(mi_input)
             mi_outputs.append(mi_output)
+            mi_input_diffss.append(mi_input_diffs)
+            mi_output_diffss.append(mi_output_diffs)
 
-    return final_losses, final_accuracies, mi_inputs, mi_outputs
+    return final_losses, final_accuracies, mi_inputs, mi_outputs, mi_input_diffss, mi_output_diffss
 
 
 if __name__ == "__main__":
     final_losses_per_seed = []
     final_accuracies_per_seed = []
     mi_inputs_per_seed, mi_outputs_per_seed = [], []
-    for seed in range(10):
-        final_losses, final_accuracies, mi_inputs, mi_outputs = get_trajectory_losses(seed)
+    for seed in range(1):
+        final_losses, final_accuracies, mi_inputs, mi_outputs, mi_input_diffs, mi_output_diffs = get_trajectory_losses(seed)
         final_losses_per_seed.append(final_losses)
         final_accuracies_per_seed.append(final_accuracies)
         mi_inputs_per_seed.append(mi_inputs)
@@ -80,3 +83,27 @@ if __name__ == "__main__":
         mi_output = mi_outputs[traj]
 
         plot_mi_plane(mi_input, mi_output, idx=traj)
+
+    plt.clf()
+    plt.grid(alpha=0.2)
+    for layer, diffs in mi_input_diffs[0].items():
+        for neuron_idx, diff in enumerate(diffs):
+            label = layer+f' Neuron {neuron_idx}'
+            y = np.array([mi[layer][neuron_idx] for mi in mi_input_diffs])
+            plt.plot(y, label=label)
+    plt.xlabel('Iteration')
+    plt.ylabel('MI Drop')
+    plt.legend()
+    plt.savefig('mi_input_drops.png')
+
+    plt.clf()
+    plt.grid(alpha=0.2)
+    for layer, diffs in mi_output_diffs[0].items():
+        for neuron_idx, diff in enumerate(diffs):
+            label = layer+f' Neuron {neuron_idx}'
+            y = np.array([mi[layer][neuron_idx] for mi in mi_output_diffs])
+            plt.plot(y, label=label)
+    plt.xlabel('Iteration')
+    plt.ylabel('MI Drop')
+    plt.legend()
+    plt.savefig('mi_output_drops.png')
