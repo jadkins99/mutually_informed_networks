@@ -61,7 +61,7 @@ def _reset_neuron_in_mlp(model, layer_idx, neuron_idx):
             # Reinitialize the weights and biases of the specified neuron
             new_layer = eqx.nn.Linear(layer.weight.shape[1], layer.weight.shape[0], key=model_key)
             new_weights = new_layer.weight.at[neuron_idx, :].set(
-                0 * jrandom.normal(model_key, (layer.weight.shape[1],)) * jnp.sqrt(2 / layer.weight.shape[1])
+                jrandom.normal(model_key, (layer.weight.shape[1],)) * jnp.sqrt(2 / layer.weight.shape[1])
             )
             new_bias = new_layer.bias.at[neuron_idx].set(0.0)
             new_layer = eqx.tree_at(lambda l: l.weight, new_layer, new_weights)
