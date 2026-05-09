@@ -20,14 +20,14 @@ class TrajectoryInfo:
         self.losses: list[float] = []
         self.accuracies: list[float] = []
 
-        init_datastruct = {f"Layer {i}": [] for i in range(self._num_layers)}
-        self.mi_input: dict[str, list[float]] = init_datastruct.copy()
-        self.mi_output: dict[str, list[float]] = init_datastruct.copy()
-        init_datastruct = {f"Layer {i}, neuron {j}": []
-                           for i in range(self._num_layers)
-                           for j in range(model.layers[i].bias.shape[0])}
-        self.mi_input_wo: dict[str, list[float]] = init_datastruct.copy()
-        self.mi_output_wo: dict[str, list[float]] = init_datastruct.copy()
+        self.mi_input: dict[str, list[float]] = {f"Layer {i}": [] for i in range(self._num_layers)}
+        self.mi_output: dict[str, list[float]] = {f"Layer {i}": [] for i in range(self._num_layers)}
+        self.mi_input_wo: dict[str, list[float]] = {f"Layer {i}, neuron {j}": []
+                                                    for i in range(self._num_layers)
+                                                    for j in range(model.layers[i].bias.shape[0])}
+        self.mi_output_wo: dict[str, list[float]] = {f"Layer {i}, neuron {j}": []
+                                                     for i in range(self._num_layers)
+                                                     for j in range(model.layers[i].bias.shape[0])}
 
     def update_mi(self, mi_with_input: list[float], mi_with_output: list[float]):
         assert len(mi_with_input) == self._num_layers, f"Mismatch: {len(mi_with_input)} != {self._num_layers}"
