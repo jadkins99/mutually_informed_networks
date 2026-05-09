@@ -14,21 +14,23 @@ def plot_mi_plane(mi_x_per_layer: list[list[float]], mi_y_per_layer: list[list[f
     """
     fig, ax = plt.subplots()
 
-    mi_x_el = np.array(mi_x_per_layer)  # shape (num_steps, num_layers)
-    mi_y_el = np.array(mi_y_per_layer)  # shape (num_steps, num_layers)
+    mi_x_el = np.array(mi_x_per_layer)  # shape (num_layers, num_steps)
+    mi_y_el = np.array(mi_y_per_layer)  # shape (num_layers, num_steps)
 
-    for layer_idx in range(mi_x_el.shape[1]):
-        mi_x = mi_x_el[:, layer_idx].tolist()
-        mi_y = mi_y_el[:, layer_idx].tolist()
+    for layer_idx in range(mi_x_el.shape[0]):
+        mi_x = mi_x_el[layer_idx, :].tolist()
+        mi_y = mi_y_el[layer_idx, :].tolist()
         _plot_layer_in_mi_plane(ax, mi_x, mi_y, layer_idx)
 
     ax.grid()
     ax.set_xlabel('Mutual Information X')
     ax.set_ylabel('Mutual Information Y')
     ax.set_title('Mutual Information Plane')
-    ax.legend()
 
-    plt.savefig(f'mi_plane_{idx}.png')  # TODO: save to a better place
+    ax.legend(numpoints=1, handlelength=0)
+
+    name = f'mi_plane_{idx}.png' if idx is not None else 'mi_plane.png'
+    plt.savefig(name)  # TODO: save to a better place
 
 
 def _plot_layer_in_mi_plane(ax, mi_x: list[float], mi_y: list[float], layer_idx: int):
@@ -42,7 +44,13 @@ def _plot_layer_in_mi_plane(ax, mi_x: list[float], mi_y: list[float], layer_idx:
     num_points = len(mi_x)
 
     # Plot the initial point separately to include the marker and legend
-    ax.plot(mi_x[0], mi_y[0], color=cmap(1), marker=marker, label=f'Layer {layer_idx}')
+    label = f"Layer {layer_idx}"
+    existing_labels = ax.get_legend_handles_labels()[1]
+    if label in existing_labels:
+        label = "_nolegend_"
+    ax.plot(mi_x[0], mi_y[0], color=cmap(1), marker=marker, linestyle='None', label=label)
+
+    # Connect the points with a line, coloring it according to the training progress
     for i in range(num_points - 1):
         color = cmap(1 - i / (num_points - 1))
         ax.plot(mi_x[i:i + 2], mi_y[i:i + 2], color=color, marker='')

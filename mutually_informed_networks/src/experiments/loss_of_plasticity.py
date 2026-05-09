@@ -5,7 +5,7 @@ import numpy as np
 from mi_plane import plot_mi_plane
 from mlp import MLP
 from mod_n_classification import get_mod_n_dataset
-from mutually_informed_networks.src.experiments.train import train_on_dataset
+from trajectory import train_on_dataset
 
 
 def get_trajectory_losses(seed):
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     final_losses_per_seed = []
     final_accuracies_per_seed = []
     mi_inputs_per_seed, mi_outputs_per_seed = [], []
-    for seed in range(1):
+    for seed in range(2):
         final_losses, final_accuracies, mi_inputs, mi_outputs, mi_input_diffs, mi_output_diffs = get_trajectory_losses(seed)
         final_losses_per_seed.append(final_losses)
         final_accuracies_per_seed.append(final_accuracies)
