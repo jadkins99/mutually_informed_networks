@@ -31,6 +31,7 @@ class TrajectoryInfo:
 
     def update_mi(self, mi_with_input: list[float], mi_with_output: list[float]):
         assert len(mi_with_input) == self._num_layers, f"Mismatch: {len(mi_with_input)} != {self._num_layers}"
+        assert len(mi_with_output) == self._num_layers, f"Mismatch: {len(mi_with_output)} != {self._num_layers}"
         for layer_idx in range(len(mi_with_input)):
             self.mi_input[f"Layer {layer_idx}"].append(mi_with_input[layer_idx])
             self.mi_output[f"Layer {layer_idx}"].append(mi_with_output[layer_idx])
