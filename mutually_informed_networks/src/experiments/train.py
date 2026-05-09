@@ -9,7 +9,7 @@ from trajectory import train_on_dataset, TrajectoryInfo
 
 if __name__ == "__main__":
     trajectory_infos: list[TrajectoryInfo] = []
-    for seed in range(1):
+    for seed in range(3):
         print(f'Training trajectory with seed {seed}...')
         data_key, model_key = jrandom.split(jrandom.PRNGKey(seed=seed), 2)
         xs, ys = get_mod_n_dataset(dataset_size=1_000, key=data_key, n=4)
